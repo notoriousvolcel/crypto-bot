@@ -142,6 +142,12 @@ func parseInterval(input string) (time.Duration, error) {
 }
 
 func main() {
+	// ДОБАВЛЕНО: Получаем порт из переменных окружения Render
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
 	token := getToken()
 	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
@@ -153,6 +159,15 @@ func main() {
 
 	// Запускаем уведомления ZEC
 	startZECNotifications(bot)
+
+	// ДОБАВЛЕНО: Запускаем HTTP сервер для порта
+	go func() {
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "Bot is running!")
+		})
+		log.Printf("🌐 Server listening on port %s", port)
+		http.ListenAndServe(":"+port, nil)
+	}()
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -276,4 +291,3 @@ func getToken() string {
 	}
 	return token
 }
-// Trigger new build
