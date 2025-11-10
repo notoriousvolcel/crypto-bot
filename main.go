@@ -107,11 +107,10 @@ func startZECNotifications(bot *tgbotapi.BotAPI) {
 					continue
 				}
 
-				message := fmt.Sprintf("⏰ **ZEC Price Update**\n💰 $%.2f\n📊 Интервал: %v",
+				message := fmt.Sprintf("⏰ ZEC Price Update\n💰 $%.2f\n📊 Интервал: %v",
 					price, settings.Interval)
 
 				msg := tgbotapi.NewMessage(chatID, message)
-				//msg.ParseMode = "Markdown"
 				bot.Send(msg)
 
 				// Ждем указанный интервал перед следующим уведомлением
@@ -142,7 +141,7 @@ func parseInterval(input string) (time.Duration, error) {
 }
 
 func main() {
-	// ДОБАВЛЕНО: Получаем порт из переменных окружения Render
+	// Получаем порт из переменных окружения Render
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -160,7 +159,7 @@ func main() {
 	// Запускаем уведомления ZEC
 	startZECNotifications(bot)
 
-	// ДОБАВЛЕНО: Запускаем HTTP сервер для порта
+	// Запускаем HTTP сервер для порта
 	go func() {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "Bot is running!")
@@ -184,34 +183,34 @@ func main() {
 
 		switch {
 		case text == "/start":
-			msgText = "👋 *Crypto & NFT Tracker Bot*\n\n" +
-				"💰 *Криптовалюты:*\n" +
+			msgText = "👋 Crypto & NFT Tracker Bot\n\n" +
+				"💰 Криптовалюты:\n" +
 				"/btc - цена Bitcoin\n" +
 				"/zec - цена Zcash\n" +
 				"/notify_zec - уведомления ZEC (интервал: 2 мин)\n" +
 				"/interval <время> - изменить интервал\n" +
 				"/stop - остановить уведомления\n\n" +
-				"🎨 *NFT коллекции:*\n" +
+				"🎨 NFT коллекции:\n" +
 				"/nft <символ> - цена любой коллекции\n" +
 				"/popular - популярные коллекции\n\n" +
-				"*Примеры интервалов:*\n" +
+				"Примеры интервалов:\n" +
 				"• /interval 5 - 5 минут\n" +
 				"• /interval 30s - 30 секунд\n" +
 				"• /interval 1h - 1 час"
 
 		case text == "/popular":
-			msgText = "🌟 **Популярные коллекции:**\n\n" +
-				"• `mad_lads` - Mad Lads\n" +
-				"• `degods` - DeGods\n" +
-				"• `famous_fox_federation` - Famous Fox\n" +
-				"• `solana_monkey_business` - Solana Monkey"
+			msgText = "🌟 Популярные коллекции:\n\n" +
+				"• mad_lads - Mad Lads\n" +
+				"• degods - DeGods\n" +
+				"• famous_fox_federation - Famous Fox\n" +
+				"• solana_monkey_business - Solana Monkey"
 
 		case text == "/btc":
 			price, err := getCryptoPrice("bitcoin")
 			if err != nil {
 				msgText = "❌ Ошибка получения цены BTC"
 			} else {
-				msgText = fmt.Sprintf("💰 **Bitcoin**: $%.2f", price)
+				msgText = fmt.Sprintf("💰 Bitcoin: $%.2f", price)
 			}
 
 		case text == "/zec":
@@ -219,7 +218,7 @@ func main() {
 			if err != nil {
 				msgText = "❌ Ошибка получения цены ZEC"
 			} else {
-				msgText = fmt.Sprintf("🛡️ **Zcash**: $%.2f", price)
+				msgText = fmt.Sprintf("🛡️ Zcash: $%.2f", price)
 			}
 
 		case text == "/notify_zec":
@@ -261,14 +260,14 @@ func main() {
 		case strings.HasPrefix(text, "/nft "):
 			collectionSymbol := strings.TrimPrefix(text, "/nft ")
 			if collectionSymbol == "" {
-				msgText = "❌ Укажи символ коллекции\nПример: `/nft mad_lads`"
+				msgText = "❌ Укажи символ коллекции\nПример: /nft mad_lads"
 			} else {
 				stats, err := getNFTPrice(collectionSymbol)
 				if err != nil {
 					msgText = fmt.Sprintf("❌ Коллекция '%s' не найдена", collectionSymbol)
 				} else {
 					floorPriceSOL := float64(stats.FloorPrice) / 1_000_000_000
-					msgText = fmt.Sprintf("🎨 **%s**\n\n🏷️ **Floor Price:** %.2f SOL\n📊 **Listed:** %d NFTs",
+					msgText = fmt.Sprintf("🎨 %s\n\n🏷️ Floor Price: %.2f SOL\n📊 Listed: %d NFTs",
 						formatCollectionName(collectionSymbol), floorPriceSOL, stats.ListedCount)
 				}
 			}
@@ -278,7 +277,6 @@ func main() {
 		}
 
 		msg := tgbotapi.NewMessage(chatID, msgText)
-		msg.ParseMode = "Markdown"
 		bot.Send(msg)
 	}
 }
