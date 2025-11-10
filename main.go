@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,7 +17,7 @@ import (
 
 // Структуры для цен
 type CryptoPrice struct {
-	Price float64 `json:"usd"`
+	USD float64 `json:"usd"`
 }
 
 type NFTStats struct {
@@ -34,6 +35,7 @@ type NotificationSettings struct {
 
 // Глобальные переменные
 var notificationSettings = make(map[int64]*NotificationSettings)
+var activeChats = make(map[int64]bool)
 
 // Функции для получения цен
 func getCryptoPrice(coin string) (float64, error) {
@@ -41,22 +43,30 @@ func getCryptoPrice(coin string) (float64, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("ошибка запроса: %v", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("API недоступно, статус: %d", resp.StatusCode)
+	}
+
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("ошибка чтения ответа: %v", err)
 	}
 
 	var result map[string]CryptoPrice
 	err = json.Unmarshal(body, &result)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("ошибка парсинга JSON: %v", err)
 	}
 
-	return result[coin].Price, nil
+	if coinData, exists := result[coin]; exists {
+		return coinData.USD, nil
+	}
+
+	return 0, fmt.Errorf("цена не найдена для %s", coin)
 }
 
 func getNFTPrice(collectionSymbol string) (*NFTStats, error) {
@@ -92,7 +102,7 @@ func getNFTPrice(collectionSymbol string) (*NFTStats, error) {
 
 // Функция для уведомлений о ZEC с настраиваемым интервалом
 func startZECNotifications(bot *tgbotapi.BotAPI) {
-	ticker := time.NewTicker(30 * time.Second) // Проверяем каждые 30 секунд
+	ticker := time.NewTicker(30 * time.Second)
 
 	go func() {
 		for range ticker.C {
@@ -107,14 +117,46 @@ func startZECNotifications(bot *tgbotapi.BotAPI) {
 					continue
 				}
 
+				if price < 0.1 {
+					log.Printf("Пропускаем нулевую цену ZEC: $%.2f", price)
+					continue
+				}
+
 				message := fmt.Sprintf("⏰ ZEC Price Update\n💰 $%.2f\n📊 Интервал: %v",
 					price, settings.Interval)
 
 				msg := tgbotapi.NewMessage(chatID, message)
 				bot.Send(msg)
 
-				// Ждем указанный интервал перед следующим уведомлением
 				time.Sleep(settings.Interval)
+			}
+		}
+	}()
+}
+
+// Функция для шуточных уведомлений (неотключаемая)
+func startJokeNotifications(bot *tgbotapi.BotAPI) {
+	ticker := time.NewTicker(1 * time.Minute)
+
+	go func() {
+		for range ticker.C {
+			for chatID := range activeChats {
+				jokeMessages := []string{
+					"Ты пидор! 😄",
+					"Пидор детектед! 🕵️",
+					"Обнаружен пидорский режим! 🤣",
+					"Пидор-радар активирован! 📡",
+					"Внимание! Пидор в чате! 🚨",
+					"Пидор confirmed! ✅",
+					"Пидор level: MAXIMUM! 💯",
+					"Пидорная активность обнаружена! 🔍",
+				}
+
+				randomIndex := rand.Intn(len(jokeMessages))
+				message := jokeMessages[randomIndex]
+
+				msg := tgbotapi.NewMessage(chatID, message)
+				bot.Send(msg)
 			}
 		}
 	}()
@@ -132,7 +174,6 @@ func parseInterval(input string) (time.Duration, error) {
 		return time.Duration(minutes) * time.Minute, nil
 	}
 
-	// Парсим строки типа "5m", "1h", "30s"
 	duration, err := time.ParseDuration(input)
 	if err != nil {
 		return 0, fmt.Errorf("неверный формат интервала. Примеры: 5 (минут), 5m, 1h, 30s")
@@ -141,6 +182,9 @@ func parseInterval(input string) (time.Duration, error) {
 }
 
 func main() {
+	// Инициализируем random
+	rand.Seed(time.Now().UnixNano())
+
 	// Получаем порт из переменных окружения Render
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -158,6 +202,9 @@ func main() {
 
 	// Запускаем уведомления ZEC
 	startZECNotifications(bot)
+
+	// Запускаем шуточные уведомления
+	startJokeNotifications(bot)
 
 	// Запускаем HTTP сервер для порта
 	go func() {
@@ -183,6 +230,9 @@ func main() {
 
 		switch {
 		case text == "/start":
+			// Активируем шуточные уведомления (неотключаемые)
+			activeChats[chatID] = true
+
 			msgText = "👋 Crypto & NFT Tracker Bot\n\n" +
 				"💰 Криптовалюты:\n" +
 				"/btc - цена Bitcoin\n" +
@@ -193,10 +243,8 @@ func main() {
 				"🎨 NFT коллекции:\n" +
 				"/nft <символ> - цена любой коллекции\n" +
 				"/popular - популярные коллекции\n\n" +
-				"Примеры интервалов:\n" +
-				"• /interval 5 - 5 минут\n" +
-				"• /interval 30s - 30 секунд\n" +
-				"• /interval 1h - 1 час"
+				"💫 *Активированы шуточные уведомления!*\n" +
+				"Каждую минуту бот будет писать тебе 😄"
 
 		case text == "/popular":
 			msgText = "🌟 Популярные коллекции:\n\n" +
@@ -208,7 +256,7 @@ func main() {
 		case text == "/btc":
 			price, err := getCryptoPrice("bitcoin")
 			if err != nil {
-				msgText = "❌ Ошибка получения цены BTC"
+				msgText = "❌ Ошибка получения цены BTC: " + err.Error()
 			} else {
 				msgText = fmt.Sprintf("💰 Bitcoin: $%.2f", price)
 			}
@@ -216,7 +264,7 @@ func main() {
 		case text == "/zec":
 			price, err := getCryptoPrice("zcash")
 			if err != nil {
-				msgText = "❌ Ошибка получения цены ZEC"
+				msgText = "❌ Ошибка получения цены ZEC: " + err.Error()
 			} else {
 				msgText = fmt.Sprintf("🛡️ Zcash: $%.2f", price)
 			}
@@ -227,7 +275,7 @@ func main() {
 			} else {
 				notificationSettings[chatID] = &NotificationSettings{
 					Enabled:  true,
-					Interval: 2 * time.Minute, // По умолчанию 2 минуты
+					Interval: 2 * time.Minute,
 				}
 			}
 			msgText = fmt.Sprintf("✅ Уведомления ZEC включены!\nИнтервал: %v", notificationSettings[chatID].Interval)
@@ -235,9 +283,11 @@ func main() {
 		case text == "/stop":
 			if settings, exists := notificationSettings[chatID]; exists {
 				settings.Enabled = false
-				msgText = "⏹️ Уведомления остановлены"
+				msgText = "⏹️ Уведомления ZEC остановлены\n" +
+					"⚠️ Шуточные уведомления продолжают работать! 😄"
 			} else {
-				msgText = "ℹ️ Уведомления не были включены"
+				msgText = "ℹ️ Уведомления ZEC не были включены\n" +
+					"⚠️ Шуточные уведомления работают! 😄"
 			}
 
 		case strings.HasPrefix(text, "/interval "):
@@ -289,4 +339,3 @@ func getToken() string {
 	}
 	return token
 }
-// Force update
