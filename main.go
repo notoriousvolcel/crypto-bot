@@ -111,7 +111,7 @@ func startZECNotifications(bot *tgbotapi.BotAPI) {
 					price, settings.Interval)
 
 				msg := tgbotapi.NewMessage(chatID, message)
-				msg.ParseMode = "Markdown"
+				//msg.ParseMode = "Markdown"
 				bot.Send(msg)
 
 				// Ждем указанный интервал перед следующим уведомлением
