@@ -142,8 +142,7 @@ func startJokeNotifications(bot *tgbotapi.BotAPI) {
 		for range ticker.C {
 			for chatID := range activeChats {
 				jokeMessages := []string{
-					"Ты пидор!,
-					 ,
+					"Ты пидор! 😄",
 				}
 
 				randomIndex := rand.Intn(len(jokeMessages))
@@ -237,7 +236,6 @@ func main() {
 				"🎨 NFT коллекции:\n" +
 				"/nft <символ> - цена любой коллекции\n" +
 				"/popular - популярные коллекции\n\n" +
-				
 
 		case text == "/popular":
 			msgText = "🌟 Популярные коллекции:\n\n" +
