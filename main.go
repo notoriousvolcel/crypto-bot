@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -37,8 +38,25 @@ type NotificationSettings struct {
 var notificationSettings = make(map[int64]*NotificationSettings)
 var activeChats = make(map[int64]bool)
 
+// Кэш для цен
+var priceCache = struct {
+	sync.RWMutex
+	prices map[string]struct {
+		price float64
+		time  time.Time
+	}
+}{
+	prices: make(map[string]struct {
+		price float64
+		time  time.Time
+	}),
+}
+
 // Функции для получения цен
 func getCryptoPrice(coin string) (float64, error) {
+	// Задержка чтобы избежать лимитов API
+	time.Sleep(2 * time.Second)
+
 	url := fmt.Sprintf("https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd", coin)
 
 	resp, err := http.Get(url)
@@ -46,6 +64,10 @@ func getCryptoPrice(coin string) (float64, error) {
 		return 0, fmt.Errorf("ошибка запроса: %v", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == 429 {
+		return 0, fmt.Errorf("превышен лимит запросов к API. Попробуйте позже")
+	}
 
 	if resp.StatusCode != 200 {
 		return 0, fmt.Errorf("API недоступно, статус: %d", resp.StatusCode)
@@ -69,7 +91,39 @@ func getCryptoPrice(coin string) (float64, error) {
 	return 0, fmt.Errorf("цена не найдена для %s", coin)
 }
 
+// Функция с кэшированием цен
+func getCryptoPriceWithCache(coin string) (float64, error) {
+	// Проверяем кэш
+	priceCache.RLock()
+	if cached, exists := priceCache.prices[coin]; exists {
+		if time.Since(cached.time) < 3*time.Minute { // Кэш на 3 минуты
+			priceCache.RUnlock()
+			return cached.price, nil
+		}
+	}
+	priceCache.RUnlock()
+
+	// Получаем свежую цену
+	price, err := getCryptoPrice(coin)
+	if err != nil {
+		return 0, err
+	}
+
+	// Обновляем кэш
+	priceCache.Lock()
+	priceCache.prices[coin] = struct {
+		price float64
+		time  time.Time
+	}{price: price, time: time.Now()}
+	priceCache.Unlock()
+
+	return price, nil
+}
+
 func getNFTPrice(collectionSymbol string) (*NFTStats, error) {
+	// Задержка для NFT API
+	time.Sleep(1 * time.Second)
+
 	collectionSymbol = strings.TrimSpace(collectionSymbol)
 	collectionSymbol = strings.ToLower(collectionSymbol)
 	collectionSymbol = strings.ReplaceAll(collectionSymbol, " ", "_")
@@ -102,7 +156,7 @@ func getNFTPrice(collectionSymbol string) (*NFTStats, error) {
 
 // Функция для уведомлений о ZEC с настраиваемым интервалом
 func startZECNotifications(bot *tgbotapi.BotAPI) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(5 * time.Minute) // Увеличили интервал до 5 минут
 
 	go func() {
 		for range ticker.C {
@@ -111,8 +165,15 @@ func startZECNotifications(bot *tgbotapi.BotAPI) {
 					continue
 				}
 
-				price, err := getCryptoPrice("zcash")
+				// Добавляем задержку перед запросом
+				time.Sleep(1 * time.Second)
+
+				price, err := getCryptoPriceWithCache("zcash")
 				if err != nil {
+					if strings.Contains(err.Error(), "превышен лимит") {
+						log.Printf("Лимит API превышен, пропускаем уведомление")
+						continue
+					}
 					log.Printf("Ошибка получения цены ZEC: %v", err)
 					continue
 				}
@@ -127,8 +188,6 @@ func startZECNotifications(bot *tgbotapi.BotAPI) {
 
 				msg := tgbotapi.NewMessage(chatID, message)
 				bot.Send(msg)
-
-				time.Sleep(settings.Interval)
 			}
 		}
 	}()
@@ -230,12 +289,13 @@ func main() {
 				"💰 Криптовалюты:\n" +
 				"/btc - цена Bitcoin\n" +
 				"/zec - цена Zcash\n" +
-				"/notify_zec - уведомления ZEC (интервал: 2 мин)\n" +
+				"/notify_zec - уведомления ZEC\n" +
 				"/interval <время> - изменить интервал\n" +
 				"/stop - остановить уведомления\n\n" +
 				"🎨 NFT коллекции:\n" +
 				"/nft <символ> - цена любой коллекции\n" +
-				"/popular - популярные коллекции\n\n"
+				"/popular - популярные коллекции\n\n" +
+				"⚠️ Из-за лимитов API возможны задержки"
 
 		case text == "/popular":
 			msgText = "🌟 Популярные коллекции:\n\n" +
@@ -245,17 +305,25 @@ func main() {
 				"• solana_monkey_business - Solana Monkey"
 
 		case text == "/btc":
-			price, err := getCryptoPrice("bitcoin")
+			price, err := getCryptoPriceWithCache("bitcoin")
 			if err != nil {
-				msgText = "❌ Ошибка получения цены BTC: " + err.Error()
+				if strings.Contains(err.Error(), "превышен лимит") {
+					msgText = "❌ Превышен лимит запросов API. Попробуйте через несколько минут."
+				} else {
+					msgText = "❌ Ошибка получения цены BTC: " + err.Error()
+				}
 			} else {
 				msgText = fmt.Sprintf("💰 Bitcoin: $%.2f", price)
 			}
 
 		case text == "/zec":
-			price, err := getCryptoPrice("zcash")
+			price, err := getCryptoPriceWithCache("zcash")
 			if err != nil {
-				msgText = "❌ Ошибка получения цены ZEC: " + err.Error()
+				if strings.Contains(err.Error(), "превышен лимит") {
+					msgText = "❌ Превышен лимит запросов API. Попробуйте через несколько минут."
+				} else {
+					msgText = "❌ Ошибка получения цены ZEC: " + err.Error()
+				}
 			} else {
 				msgText = fmt.Sprintf("🛡️ Zcash: $%.2f", price)
 			}
@@ -266,10 +334,10 @@ func main() {
 			} else {
 				notificationSettings[chatID] = &NotificationSettings{
 					Enabled:  true,
-					Interval: 2 * time.Minute,
+					Interval: 5 * time.Minute, // Увеличили стандартный интервал
 				}
 			}
-			msgText = fmt.Sprintf("✅ Уведомления ZEC включены!\nИнтервал: %v", notificationSettings[chatID].Interval)
+			msgText = fmt.Sprintf("✅ Уведомления ZEC включены!\nИнтервал: %v\n⚠️ Уведомления могут приходить с задержками из-за лимитов API", notificationSettings[chatID].Interval)
 
 		case text == "/stop":
 			if settings, exists := notificationSettings[chatID]; exists {
@@ -287,15 +355,19 @@ func main() {
 			if err != nil {
 				msgText = fmt.Sprintf("❌ %s", err.Error())
 			} else {
-				if settings, exists := notificationSettings[chatID]; exists {
-					settings.Interval = interval
+				if interval < 2*time.Minute {
+					msgText = "❌ Минимальный интервал - 2 минуты (из-за лимитов API)"
 				} else {
-					notificationSettings[chatID] = &NotificationSettings{
-						Enabled:  false,
-						Interval: interval,
+					if settings, exists := notificationSettings[chatID]; exists {
+						settings.Interval = interval
+					} else {
+						notificationSettings[chatID] = &NotificationSettings{
+							Enabled:  false,
+							Interval: interval,
+						}
 					}
+					msgText = fmt.Sprintf("✅ Интервал уведомлений установлен: %v\nИспользуйте /notify_zec для включения", interval)
 				}
-				msgText = fmt.Sprintf("✅ Интервал уведомлений установлен: %v\nИспользуйте /notify_zec для включения", interval)
 			}
 
 		case strings.HasPrefix(text, "/nft "):
