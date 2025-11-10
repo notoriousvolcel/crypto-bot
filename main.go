@@ -1,4 +1,4 @@
-package mainpackage main
+package main
 
 import (
 	"encoding/json"
@@ -58,7 +58,7 @@ var priceCache = struct {
 // Альтернативные API для получения цен
 func getPriceFromBinance(symbol string) (float64, error) {
 	url := fmt.Sprintf("https://api.binance.com/api/v3/ticker/price?symbol=%sUSDT", symbol)
-	
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return 0, err
@@ -91,7 +91,7 @@ func getPriceFromBinance(symbol string) (float64, error) {
 func getPriceFromCoinGecko(coin string) (float64, error) {
 	// Увеличиваем задержку до 3 секунд
 	time.Sleep(3 * time.Second)
-	
+
 	url := fmt.Sprintf("https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=usd", coin)
 
 	resp, err := http.Get(url)
@@ -103,7 +103,7 @@ func getPriceFromCoinGecko(coin string) (float64, error) {
 	if resp.StatusCode == 429 {
 		return 0, fmt.Errorf("превышен лимит запросов к API. Попробуйте позже")
 	}
-	
+
 	if resp.StatusCode != 200 {
 		return 0, fmt.Errorf("API недоступно, статус: %d", resp.StatusCode)
 	}
@@ -184,7 +184,7 @@ func getCryptoPriceWithCache(coin string) (float64, error) {
 func getNFTPrice(collectionSymbol string) (*NFTStats, error) {
 	// Задержка для NFT API
 	time.Sleep(1 * time.Second)
-	
+
 	collectionSymbol = strings.TrimSpace(collectionSymbol)
 	collectionSymbol = strings.ToLower(collectionSymbol)
 	collectionSymbol = strings.ReplaceAll(collectionSymbol, " ", "_")
@@ -217,7 +217,7 @@ func getNFTPrice(collectionSymbol string) (*NFTStats, error) {
 
 // Функция для уведомлений о ZEC с настраиваемым интервалом
 func startZECNotifications(bot *tgbotapi.BotAPI) {
-	ticker := time.NewTicker(30 * time.Second) // Базовый тикер 30 секунд
+	ticker := time.NewTicker(30 * time.Second)
 
 	go func() {
 		for range ticker.C {
@@ -373,7 +373,7 @@ func main() {
 			} else {
 				notificationSettings[chatID] = &NotificationSettings{
 					Enabled:  true,
-					Interval: 30 * time.Second, // Стандартный интервал 30 секунд
+					Interval: 30 * time.Second,
 				}
 			}
 			msgText = fmt.Sprintf("✅ Уведомления ZEC включены!\nИнтервал: %v", notificationSettings[chatID].Interval)
